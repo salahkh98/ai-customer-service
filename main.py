@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Query, HTTPException
 load_dotenv()
 import requests
+from fastapi.responses import PlainTextResponse
 
 app = FastAPI()
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
@@ -18,8 +19,7 @@ class Entry(BaseModel):
 class WebhookEvent(BaseModel):
     object: str
     entry: list[Entry]
-
-@app.get("/webhook")
+@app.get("/webhook", response_class=PlainTextResponse)
 async def fbverify(
     hub_mode: str = Query(..., alias="hub.mode"),
     hub_challenge: str = Query(None, alias="hub.challenge"),
