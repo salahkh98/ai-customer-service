@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from fastapi import FastAPI, Query, HTTPException
 load_dotenv()
+import requests
 
 app = FastAPI()
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
@@ -19,12 +20,16 @@ class WebhookEvent(BaseModel):
     entry: list[Entry]
 
 @app.get("/webhook")
-async def verify_webhook(hub_mode: str = Query(..., alias="hub.mode"), hub_challenge: str = Query(..., alias="hub.challenge"), hub_verify_token: str = Query(..., alias="hub.verify.token")):
-    logging.info(f"Received webhook verification request: mode={hub_mode}, challenge={hub_challenge}, verify_token={hub_verify_token}")
-    if hub_verify_token == VERIFY_TOKEN:
+async def fbverify(
+    hub_mode: str = Query(..., alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token")
+):
+    if hub_mode == "subscribe" and hub_challenge:
+        if hub_verify_token != VERIFY_TOKEN:
+            raise HTTPException(status_code=403, detail="Verification token mismatch")
         return hub_challenge
-    else:
-        raise HTTPException(status_code=403, detail="Verification token mismatch")
+    return "Hello world"
 
 @app.post("/webhook")
 async def handle_webhook(event: WebhookEvent):
