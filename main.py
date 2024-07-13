@@ -7,8 +7,7 @@ from dotenv import load_dotenv
 from cachetools import cached, TTLCache
 import re
 import requests
-from openai import OpenAI
-
+import google.generativeai as genai
 app = FastAPI()
 BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 
@@ -18,7 +17,7 @@ API_KEY = os.getenv('API_KEY')
 FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
-client = OpenAI(api_key=openai_api_key)
+client = genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
 
 cache = TTLCache(maxsize=100, ttl=300)
 
@@ -78,59 +77,50 @@ async def fbverify(
     return "Hello world"
 
 
+# Last contains the model's response:
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    data = await request.json()
-    print(data)
     try:
-        message = data['entry'][0]['messaging'][0]['message']
-        sender_id = data['entry'][0]['messaging'][0]['sender']['id']
-        
+        data = await request.json()
+        question_lower = data['message'].lower()
+        sender_id = data['sender']['id']  # Assuming sender ID is in the message dictionary
+
         # Handle user input
-        question_lower = message['text'].lower()
         product_id = extract_product_id(question_lower)
-        
+
         items_data = await fetch_all_available_items()
-        # if "error" in items_data:
-        question_with_context = message['text']
-        # else:
-        #     product_info = ""
-        #     if product_id is not None:
-        #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-        #         if product:
-        #             product_info = format_product_info(product)
-        #         else:
-        #             product_info = f"Product with ID {product_id} not found."
-        #     elif "total items" in question_lower:
-        #         product_info = f"The total number of items is {items_data['total_items']}."
-        #     else:
-        #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
-            
-        #     question_with_context = f"Question: {message['text']}\n\n{product_info}"
-        
-        # Get the chatbot response
-        response = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are FawriBot, an intelligent assistant for Fawri, an e-commerce platform. You have comprehensive knowledge of the e-commerce database, including products, customers, and orders. Your purpose is to assist with inquiries related to the e-commerce system. Please provide accurate and relevant information for any e-commerce-related questions you receive."},
-                {"role": "user", "content": question_with_context}
-            ],
-            model="gpt-3.5-turbo"
-        )
-        response_text = response.choices[0].message['content'].strip()
-        
-        # Prepare the response for Facebook Messenger
-        request_body = {
-            "recipient": {
-                "id": sender_id
-            },
-            "message": {
-                "text": response_text
-            }
-        }
-        response = requests.post(FACEBOOK_API, json=request_body).json()
-        return JSONResponse(content=response)
-    
+        if "error" in items_data:
+            question_with_context = data['message']
+        else:
+            product_info = ""
+            if product_id is not None:
+                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+                if product:
+                    product_info = format_product_info(product)
+                else:
+                    product_info = f"Product with ID {product_id} not found."
+            elif "total items" in question_lower:
+                product_info = f"The total number of items is {items_data['total_items']}."
+            else:
+                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+
+            question_with_context = f"Question: {data['message']}\n\n{product_info}"
+
+            # Get the chatbot response using GenAI library
+
+            # Configure GenAI with your API key
+            genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
+
+            model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
+            response = model.generate_content(question_with_context, max_tokens=1024, temperature=0.7)
+            chatbot_response = response.text
+
+            # Combine chatbot response and product information
+            final_response = f"{chatbot_response}\n\n{product_info}"
+
+            return JSONResponse(content={"message": final_response})
+
     except KeyError as e:
         print(f"Key error: {e}")
         raise HTTPException(status_code=400, detail="Bad request")
@@ -139,7 +129,6 @@ async def handle_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"status": "ok"}
-
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
