@@ -117,7 +117,7 @@ async def handle_webhook(request: Request):
                             genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
 
                             model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
-                            response = model.generate_content(question_with_context, max_tokens=1024, temperature=0.7)
+                            response = model.generate_content(question_with_context)
                             chatbot_response = response.text
 
                             # Combine chatbot response and product information
