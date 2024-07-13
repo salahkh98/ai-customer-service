@@ -76,6 +76,9 @@ async def fbverify(
             raise HTTPException(status_code=403, detail="Verification token mismatch")
         return hub_challenge
     return "Hello world"
+
+
+
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
@@ -89,22 +92,22 @@ async def handle_webhook(request: Request):
         product_id = extract_product_id(question_lower)
         
         items_data = await fetch_all_available_items()
-        if "error" in items_data:
-            question_with_context = message['text']
-        else:
-            product_info = ""
-            if product_id is not None:
-                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                if product:
-                    product_info = format_product_info(product)
-                else:
-                    product_info = f"Product with ID {product_id} not found."
-            elif "total items" in question_lower:
-                product_info = f"The total number of items is {items_data['total_items']}."
-            else:
-                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+        # if "error" in items_data:
+        question_with_context = message['text']
+        # else:
+        #     product_info = ""
+        #     if product_id is not None:
+        #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+        #         if product:
+        #             product_info = format_product_info(product)
+        #         else:
+        #             product_info = f"Product with ID {product_id} not found."
+        #     elif "total items" in question_lower:
+        #         product_info = f"The total number of items is {items_data['total_items']}."
+        #     else:
+        #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
             
-            question_with_context = f"Question: {message['text']}\n\n{product_info}"
+        #     question_with_context = f"Question: {message['text']}\n\n{product_info}"
         
         # Get the chatbot response
         response = client.chat.completions.create(
