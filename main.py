@@ -83,49 +83,47 @@ async def fbverify(
 async def handle_webhook(request: Request):
     try:
         data = await request.json()
-        print("the data is ")
-        try:
-            for k , v in data.items():
-                print(k , v)
-        except:
-            pass
-        question_lower = data['message'].lower()
-        sender_id = data['sender']['id']  # Assuming sender ID is in the message dictionary
+        if 'entry' in data:
+            for entry in data['entry']:
+                for event in entry['messaging']:
+                    sender_id = event['sender']['id']
+                    if 'message' in event:
+                        message_text = event['message']['text'].lower()
 
-        # Handle user input
-        product_id = extract_product_id(question_lower)
+                        # Handle user input
+                        product_id = extract_product_id(message_text)
 
-        items_data = await fetch_all_available_items()
-        if "error" in items_data:
-            question_with_context = data['message']
-        else:
-            product_info = ""
-            if product_id is not None:
-                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                if product:
-                    product_info = format_product_info(product)
-                else:
-                    product_info = f"Product with ID {product_id} not found."
-            elif "total items" in question_lower:
-                product_info = f"The total number of items is {items_data['total_items']}."
-            else:
-                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+                        items_data = await fetch_all_available_items()
+                        if "error" in items_data:
+                            question_with_context = message_text
+                        else:
+                            product_info = ""
+                            if product_id is not None:
+                                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+                                if product:
+                                    product_info = format_product_info(product)
+                                else:
+                                    product_info = f"Product with ID {product_id} not found."
+                            elif "total items" in message_text:
+                                product_info = f"The total number of items is {items_data['total_items']}."
+                            else:
+                                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
 
-            question_with_context = f"Question: {data['message']}\n\n{product_info}"
+                            question_with_context = f"Question: {message_text}\n\n{product_info}"
 
-            # Get the chatbot response using GenAI library
+                            # Get the chatbot response using GenAI library
 
-            # Configure GenAI with your API key
-            genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
+                            # Configure GenAI with your API key
+                            genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
 
-            model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
-            response = model.generate_content(question_with_context, max_tokens=1024, temperature=0.7)
-            chatbot_response = response.text
+                            model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
+                            response = model.generate_content(question_with_context, max_tokens=1024, temperature=0.7)
+                            chatbot_response = response.text
 
-            # Combine chatbot response and product information
-            final_response = f"{chatbot_response}\n\n{product_info}"
+                            # Combine chatbot response and product information
+                            final_response = f"{chatbot_response}\n\n{product_info}"
 
-            return JSONResponse(content={"message": final_response})
+                            return JSONResponse(content={"message": final_response})
 
     except KeyError as e:
         print(f"Key error: {e}")
@@ -135,6 +133,7 @@ async def handle_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"status": "ok"}
+
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
