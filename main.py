@@ -85,7 +85,7 @@ async def handle_webhook(request: Request):
         data = await request.json()
         print("the data is ")
         try:
-            print(data.keys())
+            print(data['object'])
         except:
             pass
         question_lower = data['message'].lower()
