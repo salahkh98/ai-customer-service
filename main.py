@@ -1,26 +1,68 @@
+from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
+import aiohttp
+import asyncio
 import os
-import logging
-from pydantic import BaseModel
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, HTTPException , Request
-load_dotenv()
+from cachetools import cached, TTLCache
+import re
 import requests
-from fastapi.responses import PlainTextResponse , JSONResponse
+import openai
 
 app = FastAPI()
+BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
+
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
+API_KEY = os.getenv('API_KEY')
 API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
-class Entry(BaseModel):
-    id: str
-    time: int
-    messaging: list
-
-class WebhookEvent(BaseModel):
-    object: str
-    entry: list[Entry]
+openai.api_key = "sk-None-iEY2qrxBloCQeFfg4OfuT3BlbkFJROWbdHzeYvGDoY5s6TkL"
 
 
+cache = TTLCache(maxsize=100, ttl=300)
+
+@cached(cache)
+async def fetch_all_available_items():
+    page = 1
+    all_products = []
+    total_items = 0
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            async with session.get(f"{BASE_URL}/getAvailableItems?api_key={API_KEY}&page={page}") as response:
+                if response.status == 200:
+                    data = await response.json()
+                    all_products.extend(data['items'])
+                    total_items = data['total_items']
+                    if page >= len(data['pagination']):
+                        break
+                    page += 1
+                else:
+                    return {"error": "Failed to fetch data"}
+
+    return {"products": all_products, "total_items": total_items}
+def extract_product_id(question):
+    # Use regex to find the first sequence of digits in the question
+    match = re.search(r'\b\d+\b', question)
+    if match:
+        return int(match.group())
+    return None
+
+# Function to format the product information
+def format_product_info(product):
+    product_info = (f"Hello! As FawriBot, I'm here to help you with your inquiry. "
+                    f"The product ID you provided is indeed for a luxury item from the brand {product.get('brand', 'N/A')}. "
+                    f"The name of this product is \"{product['title']}\" and its current price is {product['price']}.\n\n"
+                    f"Here's some additional information about this product:\n\n"
+                    f"Name: {product['title']}\n"
+                    f"Brand: {product.get('brand', 'N/A')}\n"
+                    f"Product ID: {product['id']}\n"
+                    f"Size: {product.get('size', 'N/A')}\n"
+                    f"Weight: {product.get('weight', 'N/A')}\n"
+                    f"Material: {product.get('material', 'N/A')}\n"
+                    f"Color: {product.get('color', 'N/A')}\n"
+                    f"![Product Image]({product.get('thumbnail', '')})")
+    return product_info
 
 @app.get("/webhook", response_class=PlainTextResponse)
 async def fbverify(
@@ -34,11 +76,6 @@ async def fbverify(
         return hub_challenge
     return "Hello world"
 
-
-
-
-
-
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
@@ -46,17 +83,49 @@ async def handle_webhook(request: Request):
     try:
         message = data['entry'][0]['messaging'][0]['message']
         sender_id = data['entry'][0]['messaging'][0]['sender']['id']
-        if message['text'].lower() == "hi":
-            request_body = {
-                "recipient": {
-                    "id": sender_id
-                },
-                "message": {
-                    "text": "hello, world!"
-                }
+        
+        # Handle user input
+        question_lower = message['text'].lower()
+        product_id = extract_product_id(question_lower)
+        
+        items_data = await fetch_all_available_items()
+        if "error" in items_data:
+            question_with_context = message['text']
+        else:
+            product_info = ""
+            if product_id is not None:
+                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+                if product:
+                    product_info = format_product_info(product)
+                else:
+                    product_info = f"Product with ID {product_id} not found."
+            elif "total items" in question_lower:
+                product_info = f"The total number of items is {items_data['total_items']}."
+            else:
+                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+            
+            question_with_context = f"Question: {message['text']}\n\n{product_info}"
+        
+        # Get the chatbot response
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=question_with_context,
+            max_tokens=150
+        )
+        response_text = response.choices[0].text.strip()
+        
+        # Prepare the response for Facebook Messenger
+        request_body = {
+            "recipient": {
+                "id": sender_id
+            },
+            "message": {
+                "text": response_text
             }
-            response = requests.post(API, json=request_body).json()
-            return JSONResponse(content=response)
+        }
+        response = requests.post(API, json=request_body).json()
+        return JSONResponse(content=response)
+    
     except KeyError as e:
         print(f"Key error: {e}")
         raise HTTPException(status_code=400, detail="Bad request")
@@ -67,20 +136,6 @@ async def handle_webhook(request: Request):
     return {"status": "ok"}
 
 
-
-# @app.get('/webhook')
-# async def verify_token(hub_mode: str, hub_challenge: str, hub_verify_token: str):
-#     if hub_verify_token == VERIFY_TOKEN:
-#         return hub_challenge
-#     raise HTTPException(status_code=403, detail="Verification token mismatch")
-
-# @app.post('/webhook')
-# async def webhook(event: WebhookEvent):
-#     for entry in event.entry:
-#         for messaging_event in entry['messaging']:
-#             if 'message' in messaging_event:
-#                 await handle_message(messaging_event)
-#     return "OK"
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
