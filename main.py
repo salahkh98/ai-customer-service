@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from cachetools import cached, TTLCache
 import re
 import requests
-import openai
+from openai import OpenAI
 
 app = FastAPI()
 BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
@@ -15,9 +15,10 @@ BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
 API_KEY = os.getenv('API_KEY')
-API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
-openai.api_key = "sk-None-iEY2qrxBloCQeFfg4OfuT3BlbkFJROWbdHzeYvGDoY5s6TkL"
+FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
+openai_api_key = os.getenv("OPENAI_API_KEY")
 
+client = OpenAI(api_key=openai_api_key)
 
 cache = TTLCache(maxsize=100, ttl=300)
 
@@ -75,7 +76,6 @@ async def fbverify(
             raise HTTPException(status_code=403, detail="Verification token mismatch")
         return hub_challenge
     return "Hello world"
-
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
@@ -107,12 +107,14 @@ async def handle_webhook(request: Request):
             question_with_context = f"Question: {message['text']}\n\n{product_info}"
         
         # Get the chatbot response
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=question_with_context,
-            max_tokens=150
+        response = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": "You are FawriBot, an intelligent assistant for Fawri, an e-commerce platform. You have comprehensive knowledge of the e-commerce database, including products, customers, and orders. Your purpose is to assist with inquiries related to the e-commerce system. Please provide accurate and relevant information for any e-commerce-related questions you receive."},
+                {"role": "user", "content": question_with_context}
+            ],
+            model="gpt-3.5-turbo"
         )
-        response_text = response.choices[0].text.strip()
+        response_text = response.choices[0].message['content'].strip()
         
         # Prepare the response for Facebook Messenger
         request_body = {
@@ -123,7 +125,7 @@ async def handle_webhook(request: Request):
                 "text": response_text
             }
         }
-        response = requests.post(API, json=request_body).json()
+        response = requests.post(FACEBOOK_API, json=request_body).json()
         return JSONResponse(content=response)
     
     except KeyError as e:
@@ -134,7 +136,6 @@ async def handle_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"status": "ok"}
-
 
 
 # async def handle_message(event):
