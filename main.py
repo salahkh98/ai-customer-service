@@ -83,6 +83,11 @@ async def fbverify(
 async def handle_webhook(request: Request):
     try:
         data = await request.json()
+        print("the data is ")
+        try:
+            print(data.keys())
+        except:
+            pass
         question_lower = data['message'].lower()
         sender_id = data['sender']['id']  # Assuming sender ID is in the message dictionary
 
