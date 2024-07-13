@@ -2,15 +2,15 @@ import os
 import logging
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException , Request
 load_dotenv()
 import requests
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse , JSONResponse
 
 app = FastAPI()
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
-
+API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
 class Entry(BaseModel):
     id: str
     time: int
@@ -19,6 +19,9 @@ class Entry(BaseModel):
 class WebhookEvent(BaseModel):
     object: str
     entry: list[Entry]
+
+
+
 @app.get("/webhook", response_class=PlainTextResponse)
 async def fbverify(
     hub_mode: str = Query(..., alias="hub.mode"),
@@ -31,11 +34,36 @@ async def fbverify(
         return hub_challenge
     return "Hello world"
 
+
+
+
+
+
 @app.post("/webhook")
-async def handle_webhook(event: WebhookEvent):
-    for entry in event.entry:
-        for message in entry.messaging:
-            print(message)
+async def handle_webhook(request: Request):
+    data = await request.json()
+    print(data)
+    try:
+        message = data['entry'][0]['messaging'][0]['message']
+        sender_id = data['entry'][0]['messaging'][0]['sender']['id']
+        if message['text'].lower() == "hi":
+            request_body = {
+                "recipient": {
+                    "id": sender_id
+                },
+                "message": {
+                    "text": "hello, world!"
+                }
+            }
+            response = requests.post(API, json=request_body).json()
+            return JSONResponse(content=response)
+    except KeyError as e:
+        print(f"Key error: {e}")
+        raise HTTPException(status_code=400, detail="Bad request")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
     return {"status": "ok"}
 
 
