@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from cachetools import cached, TTLCache
 import re
 import requests
-import genai 
+import google.generativeai as genai
 
 app = FastAPI()
 BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
