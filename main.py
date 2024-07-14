@@ -14,7 +14,7 @@ BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
 API_KEY = os.getenv('API_KEY')
-FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
+# FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
 openai_api_key = os.getenv("OPENAI_API_KEY")
 
 client = genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
@@ -77,7 +77,8 @@ async def fbverify(
     return "Hello world"
 
 
-# Last contains the model's response:
+
+
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
@@ -114,14 +115,15 @@ async def handle_webhook(request: Request):
                             # Get the chatbot response using GenAI library
 
                             # Configure GenAI with your API key
-                            genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
+                            # genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
 
-                            model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
-                            response = model.generate_content(question_with_context)
-                            chatbot_response = response.text
-
-                            # Combine chatbot response and product information
+                            # model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
+                            # response = model.generate_content(question_with_context)
+                            # chatbot_response = response.text
+                            chatbot_response = 'hello sk'
+#                             # Combine chatbot response and product information
                             final_response = f"{chatbot_response}\n\n{product_info}"
+
 
                             return JSONResponse(content={"message": final_response})
 
