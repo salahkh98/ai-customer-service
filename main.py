@@ -82,63 +82,63 @@ async def fbverify(
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
-    print(data)
-    try:
-        message = data['entry'][0]['messaging'][0]['message']
-        sender_id = data['entry'][0]['messaging'][0]['sender']['id']
-        
-        # Handle user input
-        question_lower = message['text'].lower()
-        product_id = extract_product_id(question_lower)
-        
-        items_data = await fetch_all_available_items()
-        if "error" in items_data:
-            question_with_context = message['text']
-        else:
-            product_info = ""
-            if product_id is not None:
-                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                if product:
-                    product_info = format_product_info(product)
-                else:
-                    product_info = f"Product with ID {product_id} not found."
-            elif "total items" in question_lower:
-                product_info = f"The total number of items is {items_data['total_items']}."
-            else:
-                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
-            
-            question_with_context = f"Question: {message['text']}\n\n{product_info}"
-        
-        # Get the chatbot response
-        # response = client.chat.completions.create(
-        #     messages=[
-        #         {"role": "system", "content": "You are FawriBot, an intelligent assistant for Fawri, an e-commerce platform. You have comprehensive knowledge of the e-commerce database, including products, customers, and orders. Your purpose is to assist with inquiries related to the e-commerce system. Please provide accurate and relevant information for any e-commerce-related questions you receive."},
-        #         {"role": "user", "content": question_with_context}
-        #     ],
-        #     model="gpt-3.5-turbo"
-        # )
-        # response_text = response.choices[0].message['content'].strip()
-        
-        # Prepare the response for Facebook Messenger
-        request_body = {
-            "recipient": {
-                "id": sender_id
-            },
-            "message": {
-                "text": 'response_text'
-            }
-        }
-        response = requests.post(FACEBOOK_API, json=request_body).json()
-        return JSONResponse(content=response)
+    # print(data)
+    # try:
+    message = data['entry'][0]['messaging'][0]['message']
+    sender_id = data['entry'][0]['messaging'][0]['sender']['id']
     
-    except KeyError as e:
-        print(f"Key error: {e}")
-        raise HTTPException(status_code=400, detail="Bad request")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    # Handle user input
+    question_lower = message['text'].lower()
+    product_id = extract_product_id(question_lower)
+    
+    items_data = await fetch_all_available_items()
+    if "error" in items_data:
+        question_with_context = message['text']
+    else:
+        product_info = ""
+        if product_id is not None:
+            product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+            if product:
+                product_info = format_product_info(product)
+            else:
+                product_info = f"Product with ID {product_id} not found."
+        elif "total items" in question_lower:
+            product_info = f"The total number of items is {items_data['total_items']}."
+        else:
+            product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+        
+        question_with_context = f"Question: {message['text']}\n\n{product_info}"
+    
+    # Get the chatbot response
+    # response = client.chat.completions.create(
+    #     messages=[
+    #         {"role": "system", "content": "You are FawriBot, an intelligent assistant for Fawri, an e-commerce platform. You have comprehensive knowledge of the e-commerce database, including products, customers, and orders. Your purpose is to assist with inquiries related to the e-commerce system. Please provide accurate and relevant information for any e-commerce-related questions you receive."},
+    #         {"role": "user", "content": question_with_context}
+    #     ],
+    #     model="gpt-3.5-turbo"
+    # )
+    # response_text = response.choices[0].message['content'].strip()
+    
+    # Prepare the response for Facebook Messenger
+    request_body = {
+        "recipient": {
+            "id": sender_id
+        },
+        "message": {
+            "text": 'response_text'
+        }
+    }
+    response = requests.post(FACEBOOK_API, json=request_body).json()
+    return JSONResponse(content=response)
 
-    return {"status": "ok"}
+    # except KeyError as e:
+    #     print(f"Key error: {e}")
+    #     raise HTTPException(status_code=400, detail="Bad request")
+    # except Exception as e:
+    #     print(f"An error occurred: {e}")
+    #     raise HTTPException(status_code=500, detail="Internal server error")
+
+    # return {"status": "ok"}
 
 
 # async def handle_message(event):
