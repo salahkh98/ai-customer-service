@@ -9,19 +9,26 @@ import re
 import requests
 from langchain_together import ChatTogether
 
+
+
 app = FastAPI()
 
+
+
 BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
+
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
 API_KEY = os.getenv('API_KEY')
 FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
 AI_TOKEN = os.getenv("AI_TOKEN")
 
+
 chat = ChatTogether(
-    together_api_key=AI_TOKEN,
+    together_api_key="YOUR_API_KEY",
     model="meta-llama/Llama-3-70b-chat-hf",
 )
+
 cache = TTLCache(maxsize=100, ttl=300)
 
 @cached(cache)
@@ -83,52 +90,52 @@ async def fbverify(
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
-    print('hello from the webhook')
+    data = await request.json()
+    print(data)
     try:
-        data = await request.json()
-        if 'entry' in data:
-            for entry in data['entry']:
-                for event in entry['messaging']:
-                    sender_id = event['sender']['id']
-                    if 'message' in event:
-                        message_text = event['message']['text'].lower()
+        message = data['entry'][0]['messaging'][0]['message']
+        sender_id = data['entry'][0]['messaging'][0]['sender']['id']
+        
+        # Handle user input
+        question_lower = message['text'].lower()
+        # product_id = extract_product_id(question_lower)
+        
+        # items_data = await fetch_all_available_items()
+        # if "error" in items_data:
+        #     question_with_context = message['text']
+        # else:
+        #     product_info = ""
+        #     if product_id is not None:
+        #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+        #         if product:
+        #             product_info = format_product_info(product)
+        #         else:
+        #             product_info = f"Product with ID {product_id} not found."
+        #     elif "total items" in question_lower:
+        #         product_info = f"The total number of items is {items_data['total_items']}."
+        #     else:
+        #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+            
+        question_with_context = f"Question: {message['text']}"
+        
+        # Get the chatbot response
+        chatbot_response = ""
+        for m in chat.stream(question_with_context):
+            chatbot_response += m.content
 
-                        # Handle user input
-                        # product_id = extract_product_id(message_text)
-
-                        # try:
-                            # # items_data = await fetch_all_available_items()
-                            # if "error" in items_data:
-                            #     product_info = "Error fetching items data."
-                            # else:
-                            #     product_info = ""
-                            #     if product_id is not None:
-                            #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                            #         if product:
-                            #             product_info = format_product_info(product)
-                            #         else:
-                            #             product_info = f"Product with ID {product_id} not found."
-                            #     elif "total items" in message_text:
-                            #         product_info = f"The total number of items is {items_data['total_items']}."
-                            #     else:
-                            #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
-
-                        # except Exception as e:
-                        #     print(f"Error fetching items data: {e}")
-                        #     product_info = "Error fetching items data."
-
-                        question_with_context = f"Question: {message_text}"
-
-                        # Get the chatbot response
-                        chatbot_response = ""
-                        for m in chat.stream(question_with_context):
-                            chatbot_response += m.content
-
-                        # Combine chatbot response and product information
-                        final_response = f"{chatbot_response}"
-
-                        return JSONResponse(content={"message": final_response})
-
+        
+        # Prepare the response for Facebook Messenger
+        request_body = {
+            "recipient": {
+                "id": sender_id
+            },
+            "message": {
+                "text": chatbot_response
+            }
+        }
+        response = requests.post(FACEBOOK_API, json=request_body).json()
+        return JSONResponse(content=response)
+    
     except KeyError as e:
         print(f"Key error: {e}")
         raise HTTPException(status_code=400, detail="Bad request")
