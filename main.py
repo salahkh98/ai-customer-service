@@ -7,18 +7,21 @@ from dotenv import load_dotenv
 from cachetools import cached, TTLCache
 import re
 import requests
-import google.generativeai as genai
+from langchain_together import ChatTogether
 
 app = FastAPI()
-BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 
+BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
 API_KEY = os.getenv('API_KEY')
 FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
-openai_api_key = os.getenv("OPENAI_API_KEY")
+AI_TOKEN = os.getenv("AI_TOKEN")
 
-
+chat = ChatTogether(
+    together_api_key="YOUR_API_KEY",
+    model="meta-llama/Llama-3-70b-chat-hf",
+)
 cache = TTLCache(maxsize=100, ttl=300)
 
 @cached(cache)
@@ -92,37 +95,38 @@ async def handle_webhook(request: Request):
                         # Handle user input
                         product_id = extract_product_id(message_text)
 
-                        items_data = await fetch_all_available_items()
-                        if "error" in items_data:
-                            question_with_context = message_text
-                        else:
-                            product_info = ""
-                            if product_id is not None:
-                                product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                                if product:
-                                    product_info = format_product_info(product)
-                                else:
-                                    product_info = f"Product with ID {product_id} not found."
-                            elif "total items" in message_text:
-                                product_info = f"The total number of items is {items_data['total_items']}."
+                        try:
+                            items_data = await fetch_all_available_items()
+                            if "error" in items_data:
+                                product_info = "Error fetching items data."
                             else:
-                                product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+                                product_info = ""
+                                if product_id is not None:
+                                    product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+                                    if product:
+                                        product_info = format_product_info(product)
+                                    else:
+                                        product_info = f"Product with ID {product_id} not found."
+                                elif "total items" in message_text:
+                                    product_info = f"The total number of items is {items_data['total_items']}."
+                                else:
+                                    product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
 
-                            question_with_context = f"Question: {message_text}\n\n{product_info}"
+                        except Exception as e:
+                            print(f"Error fetching items data: {e}")
+                            product_info = "Error fetching items data."
 
-                            # Get the chatbot response using GenAI library
-                            
-                            # Configure GenAI with your API key
-                            genai.configure(api_key='AIzaSyCvqGpzBDZBqbdz3huhYpPWejZC3u4_78s')
+                        question_with_context = f"Question: {message_text}\n\n{product_info}"
 
-                            model = genai.GenerativeModel('gemini-pro')  # Use the Gemini Pro model
-                            response = model.generate_content(question_with_context)
-                            chatbot_response = response.text
+                        # Get the chatbot response
+                        chatbot_response = ""
+                        for m in chat.stream(question_with_context):
+                            chatbot_response += m.content
 
-                            # Combine chatbot response and product information
-                            final_response = f"{chatbot_response}\n\n{product_info}"
+                        # Combine chatbot response and product information
+                        final_response = f"{chatbot_response}\n\n{product_info}"
 
-                            return JSONResponse(content={"message": final_response})
+                        return JSONResponse(content={"message": final_response})
 
     except KeyError as e:
         print(f"Key error: {e}")
