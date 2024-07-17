@@ -83,6 +83,7 @@ async def fbverify(
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
+    print('hello from the webhook')
     try:
         data = await request.json()
         if 'entry' in data:
