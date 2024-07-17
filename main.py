@@ -20,7 +20,7 @@ AI_TOKEN = os.getenv("AI_TOKEN")
 
 chat = ChatTogether(
     together_api_key=AI_TOKEN,
-    model="meta-llama/Llama-3-70b-chat-hf",
+    model="google/gemma-2-27b-it",
 )
 cache = TTLCache(maxsize=100, ttl=300)
 
