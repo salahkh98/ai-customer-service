@@ -20,7 +20,7 @@ AI_TOKEN = os.getenv("AI_TOKEN")
 
 chat = ChatTogether(
     together_api_key=AI_TOKEN,
-    model="google/gemma-2-27b-it",
+    model="meta-llama/Llama-3-70b-chat-hf",
 )
 cache = TTLCache(maxsize=100, ttl=300)
 
@@ -94,30 +94,30 @@ async def handle_webhook(request: Request):
                         message_text = event['message']['text'].lower()
 
                         # Handle user input
-                        product_id = extract_product_id(message_text)
+                        # product_id = extract_product_id(message_text)
 
-                        try:
-                            items_data = await fetch_all_available_items()
-                            if "error" in items_data:
-                                product_info = "Error fetching items data."
-                            else:
-                                product_info = ""
-                                if product_id is not None:
-                                    product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-                                    if product:
-                                        product_info = format_product_info(product)
-                                    else:
-                                        product_info = f"Product with ID {product_id} not found."
-                                elif "total items" in message_text:
-                                    product_info = f"The total number of items is {items_data['total_items']}."
-                                else:
-                                    product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
+                        # try:
+                            # # items_data = await fetch_all_available_items()
+                            # if "error" in items_data:
+                            #     product_info = "Error fetching items data."
+                            # else:
+                            #     product_info = ""
+                            #     if product_id is not None:
+                            #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
+                            #         if product:
+                            #             product_info = format_product_info(product)
+                            #         else:
+                            #             product_info = f"Product with ID {product_id} not found."
+                            #     elif "total items" in message_text:
+                            #         product_info = f"The total number of items is {items_data['total_items']}."
+                            #     else:
+                            #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
 
-                        except Exception as e:
-                            print(f"Error fetching items data: {e}")
-                            product_info = "Error fetching items data."
+                        # except Exception as e:
+                        #     print(f"Error fetching items data: {e}")
+                        #     product_info = "Error fetching items data."
 
-                        question_with_context = f"Question: {message_text}\n\n{product_info}"
+                        question_with_context = f"Question: {message_text}"
 
                         # Get the chatbot response
                         chatbot_response = ""
@@ -125,7 +125,7 @@ async def handle_webhook(request: Request):
                             chatbot_response += m.content
 
                         # Combine chatbot response and product information
-                        final_response = f"{chatbot_response}\n\n{product_info}"
+                        final_response = f"{chatbot_response}"
 
                         return JSONResponse(content={"message": final_response})
 
