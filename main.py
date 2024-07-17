@@ -19,7 +19,7 @@ FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE
 AI_TOKEN = os.getenv("AI_TOKEN")
 
 chat = ChatTogether(
-    together_api_key="YOUR_API_KEY",
+    together_api_key=AI_TOKEN,
     model="meta-llama/Llama-3-70b-chat-hf",
 )
 cache = TTLCache(maxsize=100, ttl=300)
