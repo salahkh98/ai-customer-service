@@ -30,6 +30,7 @@ chat = ChatTogether(
 
 
 # Templating system for ShopX's chatbot context
+# ShopX business context
 COMPANY_CONTEXT = """
 حولنا
 مرحبًا بك في Shopxps.net، الوجهة الموثوقة لتجربة تسوق إلكتروني آمنة ومريحة. نحن هنا لتلبية احتياجاتك من خلال منصة متطورة تجمع بين المنتجات المحلية والعروض العالمية، وتهدف لتقديم تجربة تسوق ممتعة وسلسة للسوق الفلسطيني في الضفة الغربية.
@@ -51,7 +52,10 @@ COMPANY_CONTEXT = """
 شكرًا لاختيارك Shopxps.net. لنتسوق ونتواصل وننجح معًا.
 """
 
+# Keywords for filtering relevant queries
+KEYWORDS = ["منتج", "طلب", "التوصيل", "سعر", "المخزون", "سياسة", "الخصوصية", "حولنا", "شروط", "الدفع", "خدمة العملاء"]
 
+# FastAPI GET endpoint for Facebook webhook verification
 @app.get("/webhook", response_class=PlainTextResponse)
 async def fbverify(
     hub_mode: str = Query(..., alias="hub.mode"),
@@ -64,6 +68,7 @@ async def fbverify(
         return hub_challenge
     return "Hello world"
 
+# FastAPI POST endpoint to handle incoming Facebook messages
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
@@ -73,29 +78,39 @@ async def handle_webhook(request: Request):
         sender_id = data['entry'][0]['messaging'][0]['sender']['id']
         user_message = message.get('text', '').lower()
 
-        # Template for prompt generation
-        prompt_template = f"""
-        You are a professional and friendly chatbot that speaks Arabic and represents ShopX, an e-commerce platform.
-        
-        The user asked: {user_message}
-        Provide a professional, helpful, and informative response in Arabic based on the following context:
+        # Check if the user's message is related to business context
+        if any(keyword in user_message for keyword in KEYWORDS):
+            # Prepare the chatbot prompt with business context
+            prompt_template = f"""
+            You are a professional, sales-oriented, and friendly chatbot representing ShopX, a leading e-commerce platform.
+            
+            The user asked: {user_message}
+            Provide a professional, engaging, and sales-driven response in Arabic based on the following context:
+            
+            {COMPANY_CONTEXT}
+            """
 
-        {COMPANY_CONTEXT}
-        """
+            # Generate response from the chatbot by streaming
+            chatbot_response = ""
+            for message_chunk in chat.stream(prompt_template):
+                chatbot_response += message_chunk.content
 
-        # Stream and compile the response from the chatbot
-        chatbot_response = ""
-        for message_chunk in chat.stream(prompt_template):
-            chatbot_response += message_chunk.content
-
-        # Send the response to the Facebook Messenger API
-        response_body = {
-            "recipient": {"id": sender_id},
-            "message": {"text": chatbot_response}
-        }
-        response = requests.post(FACEBOOK_API, json=response_body).json()
-
-        return JSONResponse(content=response)
+            # Send response to the Facebook Messenger API
+            response_body = {
+                "recipient": {"id": sender_id},
+                "message": {"text": chatbot_response}
+            }
+            response = requests.post(FACEBOOK_API, json=response_body).json()
+            return JSONResponse(content=response)
+        else:
+            # Respond with a polite message if the user query is not related to the business
+            unrelated_response = "عذرًا، يمكنني مساعدتك فقط في الأمور المتعلقة بـ ShopX مثل المنتجات أو الطلبات أو السياسات."
+            response_body = {
+                "recipient": {"id": sender_id},
+                "message": {"text": unrelated_response}
+            }
+            response = requests.post(FACEBOOK_API, json=response_body).json()
+            return JSONResponse(content=response)
 
     except KeyError as e:
         print(f"Key error: {e}")
@@ -105,7 +120,6 @@ async def handle_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
     return {"status": "ok"}
-
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
