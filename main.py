@@ -15,7 +15,6 @@ app = FastAPI()
 
 
 
-BASE_URL = "https://fawri-f7ab5f0e45b8.herokuapp.com/api"
 
 PAGE_ACCESS_TOKEN = os.getenv('PAGE_ACCESS_TOKEN')
 VERIFY_TOKEN = os.getenv('VERIFY_TOKEN')
@@ -29,50 +28,29 @@ chat = ChatTogether(
     model="meta-llama/Llama-3-70b-chat-hf",
 )
 
-cache = TTLCache(maxsize=100, ttl=300)
 
-@cached(cache)
-async def fetch_all_available_items():
-    page = 1
-    all_products = []
-    total_items = 0
+# Templating system for ShopX's chatbot context
+COMPANY_CONTEXT = """
+حولنا
+مرحبًا بك في Shopxps.net، الوجهة الموثوقة لتجربة تسوق إلكتروني آمنة ومريحة. نحن هنا لتلبية احتياجاتك من خلال منصة متطورة تجمع بين المنتجات المحلية والعروض العالمية، وتهدف لتقديم تجربة تسوق ممتعة وسلسة للسوق الفلسطيني في الضفة الغربية.
 
-    async with aiohttp.ClientSession() as session:
-        while True:
-            async with session.get(f"{BASE_URL}/getAvailableItems?api_key={API_KEY}&page={page}") as response:
-                if response.status == 200:
-                    data = await response.json()
-                    all_products.extend(data['items'])
-                    total_items = data['total_items']
-                    if page >= len(data['pagination']):
-                        break
-                    page += 1
-                else:
-                    return {"error": "Failed to fetch data"}
+رؤيتنا
+في Shopxps.net، نسعى لجعل تجربة التسوق أكثر من مجرد شراء منتجات. نحن نؤمن بأنها رحلة فريدة، تبدأ من التصفح حتى استلام المنتج بأمان. هدفنا هو إنشاء سوق رقمي يدعم الأعمال المحلية ويوفر مجموعة واسعة من المنتجات التي تلبي احتياجات وتفضيلات المجتمع الفلسطيني.
 
-    return {"products": all_products, "total_items": total_items}
-def extract_product_id(question):
-    # Use regex to find the first sequence of digits in the question
-    match = re.search(r'\b\d+\b', question)
-    if match:
-        return int(match.group())
-    return None
+لماذا اختيار Shopxps.net؟
+- **الأمان والموثوقية:** نحمي معلوماتك الشخصية ونضمن أن بياناتك ومعاملاتك آمنة باستخدام أحدث معايير الأمان.
+- **التركيز المحلي:** فخورون بتقديم منتجات تعكس احتياجات السوق المحلي مع توفير تشكيلة عالمية من المنتجات التي تناسب نمط حياتك.
+- **واجهة استخدام سهلة:** منصة مصممة بعناية لتسهيل تجربة التسوق من البداية إلى النهاية.
+- **الابتكار المستمر:** نسعى باستمرار لتطوير خدماتنا وتقديم حلول مبتكرة تجعل التسوق أكثر سلاسة وراحة.
 
-# Function to format the product information
-def format_product_info(product):
-    product_info = (f"Hello! As FawriBot, I'm here to help you with your inquiry. "
-                    f"The product ID you provided is indeed for a luxury item from the brand {product.get('brand', 'N/A')}. "
-                    f"The name of this product is \"{product['title']}\" and its current price is {product['price']}.\n\n"
-                    f"Here's some additional information about this product:\n\n"
-                    f"Name: {product['title']}\n"
-                    f"Brand: {product.get('brand', 'N/A')}\n"
-                    f"Product ID: {product['id']}\n"
-                    f"Size: {product.get('size', 'N/A')}\n"
-                    f"Weight: {product.get('weight', 'N/A')}\n"
-                    f"Material: {product.get('material', 'N/A')}\n"
-                    f"Color: {product.get('color', 'N/A')}\n"
-                    f"![Product Image]({product.get('thumbnail', '')})")
-    return product_info
+سياسة الخصوصية
+نحن في ShopXPS.net ملتزمون بحماية خصوصيتك وضمان أمان معلوماتك الشخصية. يتم جمع بياناتك الشخصية فقط لتنفيذ طلباتك وتحسين تجربتك معنا. لا نشارك معلوماتك مع أطراف خارجية إلا في حدود الضرورة لتنفيذ طلباتك، مثل شركات الشحن أو مزودي خدمات الدفع. نحافظ على سرية معلوماتك ونطبق أعلى معايير الأمان لحمايتها.
+
+نحن هنا لتقديم أفضل خدمة تسوق إلكتروني ممكنة، ونسعى دائمًا إلى تحسين تجربتك. لا تتردد في التواصل معنا لأي استفسارات أو طلبات، فنحن نسعد بخدمتك.
+
+شكرًا لاختيارك Shopxps.net. لنتسوق ونتواصل وننجح معًا.
+"""
+
 
 @app.get("/webhook", response_class=PlainTextResponse)
 async def fbverify(
@@ -86,56 +64,39 @@ async def fbverify(
         return hub_challenge
     return "Hello world"
 
-
-
 @app.post("/webhook")
 async def handle_webhook(request: Request):
     data = await request.json()
-    print(data)
     try:
+        # Extract message and sender information
         message = data['entry'][0]['messaging'][0]['message']
         sender_id = data['entry'][0]['messaging'][0]['sender']['id']
-        
-        # Handle user input
-        question_lower = message['text'].lower()
-        # product_id = extract_product_id(question_lower)
-        
-        # items_data = await fetch_all_available_items()
-        # if "error" in items_data:
-        #     question_with_context = message['text']
-        # else:
-        #     product_info = ""
-        #     if product_id is not None:
-        #         product = next((item for item in items_data['products'] if item['id'] == product_id), None)
-        #         if product:
-        #             product_info = format_product_info(product)
-        #         else:
-        #             product_info = f"Product with ID {product_id} not found."
-        #     elif "total items" in question_lower:
-        #         product_info = f"The total number of items is {items_data['total_items']}."
-        #     else:
-        #         product_info = "\n".join([f"Product ID: {item['id']}, Name: {item['title']}, Price: {item['price']}" for item in items_data['products']])
-            
-        question_with_context = f"Question: {message['text']}"
-        
-        # Get the chatbot response
-        chatbot_response = ""
-        for m in chat.stream(question_with_context):
-            chatbot_response += m.content
+        user_message = message.get('text', '').lower()
 
+        # Template for prompt generation
+        prompt_template = f"""
+        You are a professional and friendly chatbot that speaks Arabic and represents ShopX, an e-commerce platform.
         
-        # Prepare the response for Facebook Messenger
-        request_body = {
-            "recipient": {
-                "id": sender_id
-            },
-            "message": {
-                "text": chatbot_response
-            }
+        The user asked: {user_message}
+        Provide a professional, helpful, and informative response in Arabic based on the following context:
+
+        {COMPANY_CONTEXT}
+        """
+
+        # Stream and compile the response from the chatbot
+        chatbot_response = ""
+        for message_chunk in chat.stream(prompt_template):
+            chatbot_response += message_chunk.content
+
+        # Send the response to the Facebook Messenger API
+        response_body = {
+            "recipient": {"id": sender_id},
+            "message": {"text": chatbot_response}
         }
-        response = requests.post(FACEBOOK_API, json=request_body).json()
+        response = requests.post(FACEBOOK_API, json=response_body).json()
+
         return JSONResponse(content=response)
-    
+
     except KeyError as e:
         print(f"Key error: {e}")
         raise HTTPException(status_code=400, detail="Bad request")
@@ -181,4 +142,3 @@ async def handle_webhook(request: Request):
 #         async with session.post(url, headers=headers, json=data) as response:
 #             if response.status != 200:
 #                 print("Failed to send message:", response.status, await response.text())
-
