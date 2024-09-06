@@ -1,13 +1,16 @@
-from langchain.chains import LLMChain
-from langchain_core.prompts import PromptTemplate
-from langchain.memory import ConversationBufferMemory
-from fastapi import FastAPI, Request, HTTPException
-from starlette.responses import JSONResponse
+from fastapi import FastAPI, Request, HTTPException, Query
+from fastapi.responses import JSONResponse, PlainTextResponse
+import aiohttp
+import asyncio
+import os
+from dotenv import load_dotenv
+from cachetools import cached, TTLCache
+import re
 import requests
 from langchain_together import ChatTogether
 
 
-import os
+
 app = FastAPI()
 
 
@@ -19,14 +22,51 @@ API_KEY = os.getenv('API_KEY')
 FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE_ACCESS_TOKEN
 AI_TOKEN = os.getenv("AI_TOKEN")
 
-chat = ChatTogether(together_api_key=AI_TOKEN, model="meta-llama/Llama-3-70b-chat-hf")
 
-# Memory to store conversation context
-memory = ConversationBufferMemory()
+chat = ChatTogether(
+    together_api_key=AI_TOKEN,
+    model="meta-llama/Llama-3-70b-chat-hf",
+)
 
-# Facebook API URL
-FACEBOOK_API = "https://graph.facebook.com/v12.0/me/messages?access_token=YOUR_PAGE_ACCESS_TOKEN"
-# Delivery and Shipping Info
+
+# Templating system for ShopX's chatbot context
+# ShopX business context
+COMPANY_CONTEXT = """
+حولنا
+مرحبًا بك في Shopxps.net، الوجهة الموثوقة لتجربة تسوق إلكتروني آمنة ومريحة. نحن هنا لتلبية احتياجاتك من خلال منصة متطورة تجمع بين المنتجات المحلية والعروض العالمية، وتهدف لتقديم تجربة تسوق ممتعة وسلسة للسوق الفلسطيني في الضفة الغربية.
+
+رؤيتنا
+في Shopxps.net، نسعى لجعل تجربة التسوق أكثر من مجرد شراء منتجات. نحن نؤمن بأنها رحلة فريدة، تبدأ من التصفح حتى استلام المنتج بأمان. هدفنا هو إنشاء سوق رقمي يدعم الأعمال المحلية ويوفر مجموعة واسعة من المنتجات التي تلبي احتياجات وتفضيلات المجتمع الفلسطيني.
+
+لماذا اختيار Shopxps.net؟
+- **الأمان والموثوقية:** نحمي معلوماتك الشخصية ونضمن أن بياناتك ومعاملاتك آمنة باستخدام أحدث معايير الأمان.
+- **التركيز المحلي:** فخورون بتقديم منتجات تعكس احتياجات السوق المحلي مع توفير تشكيلة عالمية من المنتجات التي تناسب نمط حياتك.
+- **واجهة استخدام سهلة:** منصة مصممة بعناية لتسهيل تجربة التسوق من البداية إلى النهاية.
+- **الابتكار المستمر:** نسعى باستمرار لتطوير خدماتنا وتقديم حلول مبتكرة تجعل التسوق أكثر سلاسة وراحة.
+
+سياسة الخصوصية
+نحن في ShopXPS.net ملتزمون بحماية خصوصيتك وضمان أمان معلوماتك الشخصية. يتم جمع بياناتك الشخصية فقط لتنفيذ طلباتك وتحسين تجربتك معنا. لا نشارك معلوماتك مع أطراف خارجية إلا في حدود الضرورة لتنفيذ طلباتك، مثل شركات الشحن أو مزودي خدمات الدفع. نحافظ على سرية معلوماتك ونطبق أعلى معايير الأمان لحمايتها.
+
+نحن هنا لتقديم أفضل خدمة تسوق إلكتروني ممكنة، ونسعى دائمًا إلى تحسين تجربتك. لا تتردد في التواصل معنا لأي استفسارات أو طلبات، فنحن نسعد بخدمتك.
+
+شكرًا لاختيارك Shopxps.net. لنتسوق ونتواصل وننجح معًا.
+"""
+
+# Keywords for filtering relevant queries
+KEYWORDS = [
+    "منتج", "طلب", "التوصيل", "سعر", "المخزون", "سياسة", "الخصوصية", "حولنا", 
+    "شروط", "الدفع", "خدمة العملاء", "إرجاع", "استبدال", "ضمان", "العنوان", 
+    "الشحن", "طلباتي", "تعقب", "تفاصيل الطلب", "رسوم", "التأمين", "الاستفسار", 
+    "اتصل بنا", "الدعم", "البائع", "التعاملات", "فتح حساب", "مراجعات", "المنتجات المتاحة", 
+    "الخصومات", "العروض", "تأخير", "وقت التسليم", "طرق الدفع", "التبديل", "استفسار", 
+    "معلومات الشحن", "المبالغ المستردة", "سياسة الإرجاع", "الشروط والأحكام", "المساعدة", 
+    "مشاكل", "استفسارات", "الضريبة", "الشكاوى", "التعليقات", "الاقتراحات", 
+    "المنتجات الجديدة", "الشراء", "الفاتورة", "الدفع عند الاستلام", "المسؤولية", 
+    "المنتجات المميزة", "الطلبات السابقة", "الدعم الفني", "الاستفسارات العامة", "الشحن الدولي", 
+    "تغيير العنوان", "تأكيد الطلب", "إلغاء الطلب", "تحديث الطلب", "إلغاء الاشتراك", 
+    "تحديث معلومات الحساب", "التسليم", "الدفع الإلكتروني", "خدمة الزبائن"
+]
+
 delivery_regions = {
     'Ramallah': 20, 'نابلس': 20, 'جنين': 20, 'طولكرم': 20, 'سلفيت': 20,
     'طوباس': 20, 'أريحا': 20, 'الخليل': 20, 'بيت لحم': 20, 'القدس': 35,
@@ -36,88 +76,86 @@ delivery_regions = {
 # Convert delivery info to a string for the prompt
 delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delivery_regions.items()])
 
-# Memory to store conversation context
-memory = ConversationBufferMemory()
 
-# Initialize the chat model
-chat = ChatTogether(
-    together_api_key=AI_TOKEN,
-    model="meta-llama/Llama-3-70b-chat-hf",
-)
+# FastAPI GET endpoint for Facebook webhook verification
+@app.get("/webhook", response_class=PlainTextResponse)
+async def fbverify(
+    hub_mode: str = Query(..., alias="hub.mode"),
+    hub_challenge: str = Query(None, alias="hub.challenge"),
+    hub_verify_token: str = Query(None, alias="hub.verify_token")
+):
+    if hub_mode == "subscribe" and hub_challenge:
+        if hub_verify_token != VERIFY_TOKEN:
+            raise HTTPException(status_code=403, detail="Verification token mismatch")
+        return hub_challenge
+    return "Hello world"
 
-# Define the prompt template for the chatbot
-prompt_template = """
-    You are a highly accurate customer service chatbot for ShopXPS, an e-commerce platform based in Palestine. 
-    You assist customers with product inquiries, order tracking, and delivery details. 
-    Be sure to respond accurately, provide useful details, and handle all conversations in Arabic.
-
-    Delivery times are typically between 10-14 business days. 
-    Delivery regions and fees are as follows: {regions}.
-    
-    Current conversation history:
-    {history}
-    
-    User's input:
-    {input}
-    
-    Your response in Arabic:
-"""
-
-# Create the LLMChain with a prompt template
-combined_prompt = PromptTemplate(
-    template=prompt_template,
-    input_variables=["history", "input", "regions"]
-)
-
-# Create the LLMChain using the Together AI model
-chain = LLMChain(
-    prompt=combined_prompt,
-    llm=chat
-)
-
+# FastAPI POST endpoint to handle incoming Facebook messages
 @app.post("/webhook")
 async def handle_webhook(request: Request):
+    data = await request.json()
     try:
-        data = await request.json()
-        message_data = data['entry'][0]['messaging'][0]
-        sender_id = message_data['sender']['id']
-        user_message = message_data.get('message', {}).get('text', '').strip().lower()
+        # Extract message and sender information
+        message = data['entry'][0]['messaging'][0]['message']
+        sender_id = data['entry'][0]['messaging'][0]['sender']['id']
+        user_message = message.get('text', '').lower()
 
-        if not user_message:
-            raise ValueError("Empty message received")
+        # Check if the user's message is related to business context
+        if any(keyword in user_message for keyword in KEYWORDS):
+            # Prepare the chatbot prompt with business context
+            prompt_template = f"""
+            أنت مساعد افتراضي ودود وخبير في خدمة العملاء، تمثل منصة ShopX، وهي منصة رائدة في التجارة الإلكترونية. 
+            دورك هو تقديم دعم ممتاز للعملاء، الإجابة على استفساراتهم، ومساعدتهم على اتخاذ قرارات الشراء المناسبة. 
+            أنت ملتزم بالتفاعل مع العملاء باللغة العربية فقط.
 
-        # Load conversation memory and prepare context
-        context = memory.load_memory()
+            العميل سأل: {user_message}
 
-        # Run the chain with the current context and user input
-        response_message = chain.run({
-            "history": context,
-            "input": user_message,
-            "regions": delivery_info
-        })
+            استنادًا إلى سياق الشركة المذكور أدناه، قدم ردًا احترافيًا، ودودًا، وموجهًا نحو المبيعات باللغة العربية. 
+            تأكد من أن الإجابة تشمل:
 
-        # Send the generated message back to the user on Facebook Messenger
-        send_message_to_facebook(sender_id, response_message)
+            1. تزويد العميل بمعلومات دقيقة ومحدثة.
+            2. الإجابة بطريقة واضحة ومفصلة على استفسار العميل.
+            3. تقديم اقتراحات مفيدة تدفع نحو اتخاذ قرار الشراء.
+            4. تعزيز ثقة العميل في جودة الخدمة والمنتجات التي تقدمها ShopX.
+            5. مراعاة احتياجات العميل وضمان تجربة استخدام إيجابية.
 
-        # Save conversation to memory for context in future messages
-        memory.save_context({"input": user_message}, {"output": response_message})
+            وقت التوصيل عادةً يتراوح بين 10 إلى 14 يوم عمل.
+            مناطق التوصيل ورسوم الشحن هي كما يلي: {delivery_info}.
 
-        return JSONResponse(content={"status": "message sent"})
+            معلومات سياقية حول الشركة:
+            {COMPANY_CONTEXT}
+            """
 
+            # Generate response from the chatbot by streaming
+            chatbot_response = ""
+            for message_chunk in chat.stream(prompt_template):
+                chatbot_response += message_chunk.content
+
+            # Send response to the Facebook Messenger API
+            response_body = {
+                "recipient": {"id": sender_id},
+                "message": {"text": chatbot_response}
+            }
+            response = requests.post(FACEBOOK_API, json=response_body).json()
+            return JSONResponse(content=response)
+        else:
+            # Respond with a polite message if the user query is not related to the business
+            unrelated_response = "عذرًا، يمكنني مساعدتك فقط في الأمور المتعلقة بـ ShopX مثل المنتجات أو الطلبات أو السياسات."
+            response_body = {
+                "recipient": {"id": sender_id},
+                "message": {"text": unrelated_response}
+            }
+            response = requests.post(FACEBOOK_API, json=response_body).json()
+            return JSONResponse(content=response)
+
+    except KeyError as e:
+        print(f"Key error: {e}")
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
-def send_message_to_facebook(recipient_id: str, message_text: str):
-    """Sends a response to a user on Facebook Messenger."""
-    try:
-        response_body = {
-            "recipient": {"id": recipient_id},
-            "message": {"text": message_text}
-        }
-        response = requests.post(FACEBOOK_API, json=response_body)
-        response.raise_for_status()
-    except requests.RequestException as e:
-        raise HTTPException(status_code=500, detail="Failed to send message")
+    return {"status": "ok"}
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
