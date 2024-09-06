@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import ChatPromptTemplate
 from langchain_together import ChatTogether
-from langchain.agents import initialize_agent, Tool
+from langchain import ChatPromptTemplate, ChatTogether, create_structured_chat_agent
 import os
 app = FastAPI()
 
@@ -32,7 +32,16 @@ delivery_regions = {
     'غرب القدس': 35, 'الداخل': 60, 'جنوب الداخل': 60, 'قرى رام الله': 20
 }
 
-# LangChain agent setup (using an LLM chain and memory)
+# Memory to store conversation context
+memory = ConversationBufferMemory()
+
+# Initialize the chat model
+chat = ChatTogether(
+    together_api_key=AI_TOKEN,
+    model="meta-llama/Llama-3-70b-chat-hf",
+)
+
+# Define the prompt template
 prompt_template = ChatPromptTemplate.from_template("""
     You are a highly accurate customer service chatbot for ShopXPS, an e-commerce platform based in Palestine. 
     You assist customers with product inquiries, order tracking, and delivery details. 
@@ -47,11 +56,17 @@ prompt_template = ChatPromptTemplate.from_template("""
     User's input:
     {input}
     
-    Your response in Arabic:""")
+    Your response in Arabic:
+""")
 
-# Agent initialization with chat model and tools
-tools = []
-agent_chain = initialize_agent(tools, chat, agent_type="zero-shot-react-description")
+# Convert delivery info to a string for the prompt
+delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delivery_regions.items()])
+
+# Create the structured chat agent
+agent_chain = create_structured_chat_agent(
+    chat_model=chat,
+    prompt_template=prompt_template
+)
 
 @app.post("/webhook")
 async def handle_webhook(request: Request):
@@ -71,7 +86,7 @@ async def handle_webhook(request: Request):
         prompt = prompt_template.format_prompt(
             history=context, 
             input=user_message, 
-            regions=delivery_regions
+            regions=delivery_info
         )
         
         # Generate response from the LLM agent
