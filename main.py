@@ -1,10 +1,12 @@
-import requests
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from langchain.chains import LLMChain
+from langchain_core.prompts import PromptTemplate
 from langchain.memory import ConversationBufferMemory
-from langchain_core.prompts import ChatPromptTemplate
+from fastapi import FastAPI, Request, HTTPException
+from starlette.responses import JSONResponse
+import requests
 from langchain_together import ChatTogether
-from langchain.agents import create_structured_chat_agent
+
+
 import os
 app = FastAPI()
 
@@ -24,13 +26,15 @@ memory = ConversationBufferMemory()
 
 # Facebook API URL
 FACEBOOK_API = "https://graph.facebook.com/v12.0/me/messages?access_token=YOUR_PAGE_ACCESS_TOKEN"
-
 # Delivery and Shipping Info
 delivery_regions = {
     'Ramallah': 20, 'نابلس': 20, 'جنين': 20, 'طولكرم': 20, 'سلفيت': 20,
     'طوباس': 20, 'أريحا': 20, 'الخليل': 20, 'بيت لحم': 20, 'القدس': 35,
     'غرب القدس': 35, 'الداخل': 60, 'جنوب الداخل': 60, 'قرى رام الله': 20
 }
+
+# Convert delivery info to a string for the prompt
+delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delivery_regions.items()])
 
 # Memory to store conversation context
 memory = ConversationBufferMemory()
@@ -41,8 +45,8 @@ chat = ChatTogether(
     model="meta-llama/Llama-3-70b-chat-hf",
 )
 
-# Define the prompt template
-prompt_template = ChatPromptTemplate.from_template("""
+# Define the prompt template for the chatbot
+prompt_template = """
     You are a highly accurate customer service chatbot for ShopXPS, an e-commerce platform based in Palestine. 
     You assist customers with product inquiries, order tracking, and delivery details. 
     Be sure to respond accurately, provide useful details, and handle all conversations in Arabic.
@@ -57,16 +61,18 @@ prompt_template = ChatPromptTemplate.from_template("""
     {input}
     
     Your response in Arabic:
-""")
+"""
 
-# Convert delivery info to a string for the prompt
-delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delivery_regions.items()])
+# Create the LLMChain with a prompt template
+combined_prompt = PromptTemplate(
+    template=prompt_template,
+    input_variables=["history", "input", "regions"]
+)
 
-# Create the structured chat agent
-agent_chain = create_structured_chat_agent(
-    tools=[],
-    llm=chat,
-    prompt=prompt_template
+# Create the LLMChain using the Together AI model
+chain = LLMChain(
+    prompt=combined_prompt,
+    llm=chat
 )
 
 @app.post("/webhook")
@@ -83,15 +89,12 @@ async def handle_webhook(request: Request):
         # Load conversation memory and prepare context
         context = memory.load_memory()
 
-        # Prepare prompt with memory and current input
-        prompt = prompt_template.format_prompt(
-            history=context, 
-            input=user_message, 
-            regions=delivery_info
-        )
-        
-        # Generate response from the LLM agent
-        response_message = agent_chain.run(input=user_message)
+        # Run the chain with the current context and user input
+        response_message = chain.run({
+            "history": context,
+            "input": user_message,
+            "regions": delivery_info
+        })
 
         # Send the generated message back to the user on Facebook Messenger
         send_message_to_facebook(sender_id, response_message)
@@ -115,7 +118,6 @@ def send_message_to_facebook(recipient_id: str, message_text: str):
         response.raise_for_status()
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail="Failed to send message")
-
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
