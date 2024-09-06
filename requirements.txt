@@ -18,3 +18,4 @@ aiohttp
 asyncio
 cachetools
 langchain_together
+langchain
