@@ -2,7 +2,7 @@ import requests
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from langchain.memory import ConversationBufferMemory
-from langchain.prompts.chat import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_together import ChatTogether
 from langchain.agents import ChatPromptTemplate, ChatTogether, create_structured_chat_agent
 import os
