@@ -64,7 +64,7 @@ delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delive
 
 # Create the structured chat agent
 agent_chain = create_structured_chat_agent(
-    tools=[]
+    tools=[],
     llm=chat,
     prompt=prompt_template
 )
