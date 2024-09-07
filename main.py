@@ -23,14 +23,10 @@ FACEBOOK_API = "https://graph.facebook.com/v20.0/me/messages?access_token="+PAGE
 AI_TOKEN = os.getenv("AI_TOKEN")
 
 
-chat = ChatTogether(
-    together_api_key=AI_TOKEN,
-    model="meta-llama/Llama-3-70b-chat-hf",
-)
 
 
-# Templating system for ShopX's chatbot context
-# ShopX business context
+
+# Your existing constants and context
 COMPANY_CONTEXT = """
 حولنا
 مرحبًا بك في Shopxps.net، الوجهة الموثوقة لتجربة تسوق إلكتروني آمنة ومريحة. نحن هنا لتلبية احتياجاتك من خلال منصة متطورة تجمع بين المنتجات المحلية والعروض العالمية، وتهدف لتقديم تجربة تسوق ممتعة وسلسة للسوق الفلسطيني في الضفة الغربية.
@@ -52,7 +48,6 @@ COMPANY_CONTEXT = """
 شكرًا لاختيارك Shopxps.net. لنتسوق ونتواصل وننجح معًا.
 """
 
-# Keywords for filtering relevant queries
 KEYWORDS = [
     "منتج", "طلب", "التوصيل", "سعر", "المخزون", "سياسة", "الخصوصية", "حولنا", 
     "شروط", "الدفع", "خدمة العملاء", "إرجاع", "استبدال", "ضمان", "العنوان", 
@@ -76,6 +71,38 @@ delivery_regions = {
 # Convert delivery info to a string for the prompt
 delivery_info = ", ".join([f"{region}: {fee} شيكل" for region, fee in delivery_regions.items()])
 
+FACEBOOK_API = "https://graph.facebook.com/v12.0/me/messages?access_token=YOUR_ACCESS_TOKEN"
+VERIFY_TOKEN = "YOUR_VERIFY_TOKEN"
+
+# Initialize ChatTogether
+chat = ChatTogether(
+    together_api_key=AI_TOKEN,
+    model="meta-llama/Llama-3-70b-chat-hf",
+)
+
+# Generate response using the LLM
+async def generate_response(user_message: str) -> str:
+    prompt_template = f"""
+    أنت روبوت خدمة عملاء لـ Shopxps.net. قم بالرد على الأسئلة التالية بناءً على سياق الشركة:
+    {COMPANY_CONTEXT}
+    إذا كان المستخدم يسأل عن:
+    - حالة الطلب، أجب بـ "للاستفسار عن حالة طلبك، يرجى تقديم رقم الطلب الخاص بك، أو اسمك، أو رقم هاتفك. سأكون سعيدًا بمساعدتك في التحقق من حالة طلبك."
+    - معلومات حول المنتجات، أجب بـ "للحصول على معلومات حول المنتجات أو الأسعار أو توافر المخزون، يرجى تحديد المنتج الذي تود الاستفسار عنه وسأقدم لك التفاصيل المطلوبة."
+    - التوصيل، أجب بـ "نقدم خدمات التوصيل إلى العديد من المناطق. معلومات التوصيل لدينا هي كما يلي: {delivery_info}. إذا كان لديك سؤال محدد حول منطقة توصيل معينة أو رسوم الشحن، يرجى إخباري."
+    - سياسة الخصوصية، أجب بـ "للاستفسار عن سياسة الخصوصية، شروط الاستخدام، أو سياسات الإرجاع والاستبدال، يرجى زيارة صفحة سياساتنا على موقعنا. يمكنك أيضًا طرح أي سؤال محدد وسأكون سعيدًا بالإجابة عليه."
+    - الخصوصية وأمان البيانات، أجب بـ "نحن ملتزمون بحماية معلوماتك الشخصية وضمان أمان بياناتك. لمزيد من المعلومات حول كيفية حماية بياناتك، يرجى قراءة سياسة الخصوصية الخاصة بنا أو طرح أي استفسار محدد."
+    - الحساب، أجب بـ "إذا كنت بحاجة إلى مساعدة في تسجيل الدخول، إنشاء حساب، أو تغيير كلمة المرور، يرجى زيارة صفحة تسجيل الدخول الخاصة بنا أو الاتصال بخدمة العملاء لمزيد من المساعدة."
+    - العروض والخصومات، أجب بـ "للحصول على معلومات حول العروض الحالية والخصومات، يرجى زيارة صفحة العروض على موقعنا أو يمكنك طرح سؤال محدد وسأقدم لك التفاصيل."
+    - خدمة العملاء، أجب بـ "إذا كنت بحاجة إلى مساعدة إضافية أو لديك أي استفسار عام، يرجى التواصل مع خدمة العملاء سنتأكد من أن كل استفساراتك يتم الرد عليها بشكل سريع وفعال."
+    - إذا كان هناك استفسار غير محدد، أجب بـ "عذرًا، لم أتمكن من فهم استفسارك بشكل دقيق. يرجى تقديم المزيد من التفاصيل أو طرح سؤال محدد وسأكون سعيدًا بمساعدتك."
+    المستخدم قال: "{user_message}"
+    """
+
+    chatbot_response = ""
+    async for message_chunk in chat.stream(prompt_template):
+        chatbot_response += message_chunk.content
+    
+    return chatbot_response
 
 # FastAPI GET endpoint for Facebook webhook verification
 @app.get("/webhook", response_class=PlainTextResponse)
@@ -98,64 +125,25 @@ async def handle_webhook(request: Request):
         # Extract message and sender information
         message = data['entry'][0]['messaging'][0]['message']
         sender_id = data['entry'][0]['messaging'][0]['sender']['id']
-        user_message = message.get('text', '').lower()
+        user_message = message.get('text', '')
 
-        # Check if the user's message is related to business context
-        if any(keyword in user_message for keyword in KEYWORDS):
-            # Prepare the chatbot prompt with business context
-            prompt_template = f"""
-            أنت مساعد افتراضي ودود وخبير في خدمة العملاء، تمثل منصة ShopX، وهي منصة رائدة في التجارة الإلكترونية. 
-            دورك هو تقديم دعم ممتاز للعملاء، الإجابة على استفساراتهم، ومساعدتهم على اتخاذ قرارات الشراء المناسبة. 
-            أنت ملتزم بالتفاعل مع العملاء باللغة العربية فقط.
+        # Generate response using the generate_response function
+        chatbot_response = await generate_response(user_message)
 
-            العميل سأل: {user_message}
+        # Send response to Facebook Messenger
+        response = {
+            "recipient": {"id": sender_id},
+            "message": {"text": chatbot_response}
+        }
+        response = requests.post(FACEBOOK_API, json=response)
+        response.raise_for_status()
 
-            استنادًا إلى سياق الشركة المذكور أدناه، قدم ردًا احترافيًا، ودودًا، وموجهًا نحو المبيعات باللغة العربية. 
-            تأكد من أن الإجابة تشمل:
-
-            1. تزويد العميل بمعلومات دقيقة ومحدثة.
-            2. الإجابة بطريقة واضحة ومفصلة على استفسار العميل.
-            3. تقديم اقتراحات مفيدة تدفع نحو اتخاذ قرار الشراء.
-            4. تعزيز ثقة العميل في جودة الخدمة والمنتجات التي تقدمها ShopX.
-            5. مراعاة احتياجات العميل وضمان تجربة استخدام إيجابية.
-
-            وقت التوصيل عادةً يتراوح بين 10 إلى 14 يوم عمل.
-            مناطق التوصيل ورسوم الشحن هي كما يلي: {delivery_info}.
-
-            معلومات سياقية حول الشركة:
-            {COMPANY_CONTEXT}
-            """
-
-            # Generate response from the chatbot by streaming
-            chatbot_response = ""
-            for message_chunk in chat.stream(prompt_template):
-                chatbot_response += message_chunk.content
-
-            # Send response to the Facebook Messenger API
-            response_body = {
-                "recipient": {"id": sender_id},
-                "message": {"text": chatbot_response}
-            }
-            response = requests.post(FACEBOOK_API, json=response_body).json()
-            return JSONResponse(content=response)
-        else:
-            # Respond with a polite message if the user query is not related to the business
-            unrelated_response = "عذرًا، يمكنني مساعدتك فقط في الأمور المتعلقة بـ ShopX مثل المنتجات أو الطلبات أو السياسات."
-            response_body = {
-                "recipient": {"id": sender_id},
-                "message": {"text": unrelated_response}
-            }
-            response = requests.post(FACEBOOK_API, json=response_body).json()
-            return JSONResponse(content=response)
+        return JSONResponse(content={"status": "success"}, status_code=200)
 
     except KeyError as e:
-        print(f"Key error: {e}")
-        raise HTTPException(status_code=400, detail="Bad request")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-    return {"status": "ok"}
+        raise HTTPException(status_code=400, detail=f"Missing key: {str(e)}")
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error sending response: {str(e)}")
 
 # async def handle_message(event):
 #     sender_id = event['sender']['id']
