@@ -99,7 +99,7 @@ async def generate_response(user_message: str) -> str:
     """
 
     chatbot_response = ""
-    async for message_chunk in chat.stream(prompt_template):
+    for message_chunk in chat.stream(prompt_template):
         chatbot_response += message_chunk.content
     
     return chatbot_response
